@@ -9,3 +9,6 @@ pub use hkdf::*;
 pub use kdf::*;
 pub use memory_lock::*;
 pub use secure_delete::*;
+
+#[cfg(test)]
+mod tests;

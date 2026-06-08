@@ -6,6 +6,9 @@ pub mod db_encryption;
 pub mod db_migration;
 pub mod db_key_service;
 
+#[cfg(test)]
+mod tests;
+
 pub use backup::BackupManager;
 pub use rate_limiter::RateLimiter;
 pub use vault::{Vault, VaultConfig};
