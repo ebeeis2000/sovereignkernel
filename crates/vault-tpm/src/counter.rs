@@ -1,3 +1,4 @@
+#[cfg(feature = "tpm")]
 use vault_common::{VaultError, VaultResult};
 
 pub struct TpmCounter;

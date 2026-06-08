@@ -1,3 +1,4 @@
+#[cfg(feature = "tpm")]
 use vault_common::VaultResult;
 
 #[cfg(feature = "tpm")]

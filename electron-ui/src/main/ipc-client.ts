@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual, createHmac, createCipheriv, createDecipheriv } from 'node:crypto';
+import { randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 import { connect } from 'node:net';
 import { EventEmitter } from 'node:events';
 import { X25519Handshake } from './x25519-handshake';
@@ -7,6 +7,7 @@ const PIPE = '\\\\.\\pipe\\SovereignKernelVault';
 const HEARTBEAT_INTERVAL = 30000;
 const TIMEOUT = 300000;
 const MAX_RECONNECT = 5;
+const MAX_MESSAGE_SIZE = 1024 * 1024;
 
 export class IpcClient extends EventEmitter {
   private sock: ReturnType<typeof connect> | null = null;
@@ -18,6 +19,7 @@ export class IpcClient extends EventEmitter {
   private timeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectCount = 0;
   private _connected = false;
+  private recvBuffer = Buffer.alloc(0);
 
   constructor() {
     super();
@@ -55,7 +57,7 @@ export class IpcClient extends EventEmitter {
       });
 
       this.sock.on('data', (data: Buffer) => {
-        this.handleIncoming(data);
+        this.onData(data);
       });
     });
   }
@@ -68,6 +70,7 @@ export class IpcClient extends EventEmitter {
     const seq = this.clientSeq++;
     const msg = Buffer.from(JSON.stringify({ seq: seq.toString(), command, ...payload }));
     const encrypted = this.encrypt(msg);
+    const framed = this.frameMessage(encrypted);
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -76,7 +79,7 @@ export class IpcClient extends EventEmitter {
       }, 30000);
 
       this.pending.set(seq, { resolve, reject, timer });
-      this.sock!.write(encrypted);
+      this.sock!.write(framed);
     });
   }
 
@@ -88,11 +91,34 @@ export class IpcClient extends EventEmitter {
     }
     this._connected = false;
     this.keys = null;
+    this.recvBuffer = Buffer.alloc(0);
     for (const [, p] of this.pending) {
       clearTimeout(p.timer);
       p.reject(new Error('Verbinding verbroken'));
     }
     this.pending.clear();
+  }
+
+  private frameMessage(data: Buffer): Buffer {
+    const header = Buffer.alloc(4);
+    header.writeUInt32BE(data.length, 0);
+    return Buffer.concat([header, data]);
+  }
+
+  private onData(chunk: Buffer): void {
+    this.recvBuffer = Buffer.concat([this.recvBuffer, chunk]);
+    while (this.recvBuffer.length >= 4) {
+      const msgLen = this.recvBuffer.readUInt32BE(0);
+      if (msgLen > MAX_MESSAGE_SIZE) {
+        this.emit('error', new Error('Bericht te groot — mogelijke aanval'));
+        this.disconnect();
+        return;
+      }
+      if (this.recvBuffer.length < 4 + msgLen) break;
+      const msg = this.recvBuffer.subarray(4, 4 + msgLen);
+      this.recvBuffer = this.recvBuffer.subarray(4 + msgLen);
+      this.handleIncoming(Buffer.from(msg));
+    }
   }
 
   private async performHandshake(): Promise<void> {
@@ -135,6 +161,11 @@ export class IpcClient extends EventEmitter {
       const msg = JSON.parse(decrypted.toString());
       const seq = BigInt(msg.seq);
 
+      if (seq < this.serverSeq) {
+        this.emit('error', new Error('Replay gedetecteerd: sequence nummer te laag'));
+        return;
+      }
+
       const pending = this.pending.get(seq);
       if (pending) {
         clearTimeout(pending.timer);
@@ -142,6 +173,7 @@ export class IpcClient extends EventEmitter {
         pending.resolve(decrypted);
       }
       this.serverSeq = seq + 1n;
+      this.resetTimeout();
     } catch {
       this.emit('error', new Error('Ongeldig bericht ontvangen'));
     }
@@ -150,6 +182,7 @@ export class IpcClient extends EventEmitter {
   private encrypt(plaintext: Buffer): Buffer {
     const nonce = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', this.keys!.encKey, nonce);
+    cipher.setAAD(Buffer.from(this.clientSeq.toString()));
     const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
     const tag = cipher.getAuthTag();
     return Buffer.concat([nonce, encrypted, tag]);
@@ -161,6 +194,7 @@ export class IpcClient extends EventEmitter {
     const tag = data.subarray(data.length - 16);
     const ciphertext = data.subarray(12, data.length - 16);
     const decipher = createDecipheriv('aes-256-gcm', this.keys!.encKey, nonce);
+    decipher.setAAD(Buffer.from(this.serverSeq.toString()));
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   }

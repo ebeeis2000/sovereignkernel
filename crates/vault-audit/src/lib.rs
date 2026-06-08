@@ -128,8 +128,14 @@ impl AuditLogger {
             CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
             CREATE INDEX IF NOT EXISTS idx_audit_sequence ON audit_log(sequence_number);
             CREATE INDEX IF NOT EXISTS idx_audit_machine ON audit_log(machine_id);
+            CREATE TABLE IF NOT EXISTS audit_archive_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                archived_at TEXT NOT NULL,
+                entries_archived INTEGER NOT NULL,
+                archive_hash BLOB NOT NULL
+            );
             PRAGMA journal_mode=WAL;
-            PRAGMA synchronous=NORMAL;",
+            PRAGMA synchronous=FULL;",
         )
         .map_err(|e| VaultError::Audit(format!("Schema initialisatie: {}", e)))?;
 
@@ -250,8 +256,39 @@ impl AuditLogger {
         if current_size <= self.max_database_size_bytes {
             return Ok(());
         }
-        tracing::warn!("Audit database limiet bereikt ({} bytes), oudste entries archiveren...", current_size);
-        for _ in 0..100 {
+
+        tracing::warn!("Audit database limiet bereikt ({} bytes), archivering gestart...", current_size);
+
+        let entries_to_archive: i64 = db
+            .query_row("SELECT COUNT(*) FROM audit_log WHERE id IN (SELECT id FROM audit_log ORDER BY id ASC LIMIT 10000)", [], |r| r.get(0))
+            .unwrap_or(0);
+
+        let mut archive_hasher = Sha256::new();
+        {
+            let mut stmt = db.prepare("SELECT entry_hash FROM audit_log ORDER BY id ASC LIMIT 10000").ok();
+            if let Some(ref mut s) = stmt {
+                let mut rows = s.query([]).ok();
+                if let Some(ref mut r) = rows {
+                    while let Ok(Some(row)) = r.next() {
+                        if let Ok(h) = row.get::<_, Vec<u8>>(0) {
+                            archive_hasher.update(&h);
+                        }
+                    }
+                }
+            }
+        }
+        let archive_hash: [u8; 32] = archive_hasher.finalize().into();
+
+        db.execute(
+            "INSERT INTO audit_archive_log (archived_at, entries_archived, archive_hash) VALUES (?1, ?2, ?3)",
+            rusqlite::params![
+                chrono::Utc::now().to_rfc3339(),
+                entries_to_archive,
+                archive_hash.as_slice()
+            ],
+        ).ok();
+
+        for _ in 0..10 {
             let del = db
                 .execute(
                     "DELETE FROM audit_log WHERE id IN (SELECT id FROM audit_log ORDER BY id ASC LIMIT 1000)",
@@ -263,6 +300,7 @@ impl AuditLogger {
             }
         }
         db.execute_batch("PRAGMA incremental_vacuum(1000);").ok();
+        tracing::info!("Audit archivering voltooid: {} entries gearchiveerd, hash={}", entries_to_archive, hex::encode(archive_hash));
         Ok(())
     }
 

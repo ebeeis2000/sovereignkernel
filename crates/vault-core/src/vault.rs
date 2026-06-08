@@ -35,6 +35,7 @@ impl Default for VaultConfig {
     }
 }
 
+#[allow(dead_code)]
 pub struct Vault {
     config: VaultConfig,
     rate_limiter: RateLimiter,
@@ -69,22 +70,7 @@ impl Vault {
             id
         };
 
-        let hmac_path = config.data_dir.join("hmac_key");
-        let integrity_hmac_key = if hmac_path.exists() {
-            let d = std::fs::read(&hmac_path)
-                .map_err(|e| VaultError::Storage(format!("Kan HMAC key niet lezen: {}", e)))?;
-            if d.len() != 32 {
-                return Err(VaultError::Integrity("HMAC key corrupt".into()));
-            }
-            let mut k = [0u8; 32];
-            k.copy_from_slice(&d);
-            k
-        } else {
-            let k = vault_crypto::keys::random_256bit();
-            std::fs::write(&hmac_path, k)
-                .map_err(|e| VaultError::Storage(format!("Kan HMAC key niet opslaan: {}", e)))?;
-            k
-        };
+        let integrity_hmac_key = Self::load_or_create_hmac_key(&config.data_dir)?;
 
         let rl = RateLimiter::new(
             config.data_dir.join("ratelimit.db"),
@@ -126,10 +112,108 @@ impl Vault {
         Ok(v)
     }
 
+    fn load_or_create_hmac_key(data_dir: &Path) -> VaultResult<[u8; 32]> {
+        let hmac_path = data_dir.join("hmac_key.enc");
+        if hmac_path.exists() {
+            let encrypted = std::fs::read(&hmac_path)
+                .map_err(|e| VaultError::Storage(format!("Kan HMAC key niet lezen: {}", e)))?;
+            Self::dpapi_unprotect(&encrypted)
+        } else {
+            let key = vault_crypto::keys::random_256bit();
+            let protected = Self::dpapi_protect(&key)?;
+            std::fs::write(&hmac_path, &protected)
+                .map_err(|e| VaultError::Storage(format!("Kan HMAC key niet opslaan: {}", e)))?;
+            Ok(key)
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn dpapi_protect(data: &[u8]) -> VaultResult<Vec<u8>> {
+        use std::ptr;
+        #[repr(C)]
+        struct DataBlob { cb_data: u32, pb_data: *const u8 }
+        extern "system" {
+            fn CryptProtectData(
+                pDataIn: *const DataBlob, szDataDescr: *const u16, pOptionalEntropy: *const DataBlob,
+                pvReserved: *const u8, pPromptStruct: *const u8, dwFlags: u32, pDataOut: *mut DataBlob,
+            ) -> i32;
+            fn LocalFree(hMem: *const u8) -> *const u8;
+        }
+        let entropy = b"SovereignKernel-HMAC-DPAPI-v1";
+        let input = DataBlob { cb_data: data.len() as u32, pb_data: data.as_ptr() };
+        let ent = DataBlob { cb_data: entropy.len() as u32, pb_data: entropy.as_ptr() };
+        let mut output = DataBlob { cb_data: 0, pb_data: ptr::null() };
+        let ok = unsafe { CryptProtectData(&input, ptr::null(), &ent, ptr::null(), ptr::null(), 0x04, &mut output) };
+        if ok == 0 {
+            return Err(VaultError::Crypto("DPAPI CryptProtectData mislukt".into()));
+        }
+        let result = unsafe { std::slice::from_raw_parts(output.pb_data, output.cb_data as usize).to_vec() };
+        unsafe { LocalFree(output.pb_data); }
+        Ok(result)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn dpapi_unprotect(data: &[u8]) -> VaultResult<[u8; 32]> {
+        use std::ptr;
+        #[repr(C)]
+        struct DataBlob { cb_data: u32, pb_data: *const u8 }
+        extern "system" {
+            fn CryptUnprotectData(
+                pDataIn: *const DataBlob, ppszDataDescr: *mut *const u16, pOptionalEntropy: *const DataBlob,
+                pvReserved: *const u8, pPromptStruct: *const u8, dwFlags: u32, pDataOut: *mut DataBlob,
+            ) -> i32;
+            fn LocalFree(hMem: *const u8) -> *const u8;
+        }
+        let entropy = b"SovereignKernel-HMAC-DPAPI-v1";
+        let input = DataBlob { cb_data: data.len() as u32, pb_data: data.as_ptr() };
+        let ent = DataBlob { cb_data: entropy.len() as u32, pb_data: entropy.as_ptr() };
+        let mut output = DataBlob { cb_data: 0, pb_data: ptr::null() };
+        let ok = unsafe { CryptUnprotectData(&input, ptr::null_mut(), &ent, ptr::null(), ptr::null(), 0x04, &mut output) };
+        if ok == 0 {
+            return Err(VaultError::Crypto("DPAPI CryptUnprotectData mislukt — mogelijke tampering".into()));
+        }
+        if output.cb_data != 32 {
+            unsafe { LocalFree(output.pb_data); }
+            return Err(VaultError::Integrity("DPAPI output lengte ongeldig".into()));
+        }
+        let mut key = [0u8; 32];
+        unsafe { key.copy_from_slice(std::slice::from_raw_parts(output.pb_data, 32)); }
+        unsafe { LocalFree(output.pb_data); }
+        Ok(key)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn dpapi_protect(data: &[u8]) -> VaultResult<Vec<u8>> {
+        let salt = vault_crypto::keys::random_128bit();
+        let deriver = vault_crypto::hkdf::KeyDeriver::new(data.to_vec());
+        let wrap_key = deriver.derive_encryption_key(&salt, b"SovereignKernel-HMAC-wrap-v1")?;
+        let encrypted = vault_crypto::keys::encrypt_aes_gcm(&wrap_key, data, b"hmac-key-storage")?;
+        let mut result = salt.to_vec();
+        result.extend_from_slice(&encrypted);
+        Ok(result)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn dpapi_unprotect(data: &[u8]) -> VaultResult<[u8; 32]> {
+        if data.len() < 16 + 28 {
+            return Err(VaultError::Integrity("HMAC key bestand te kort".into()));
+        }
+        let (salt, encrypted) = data.split_at(16);
+        let mid_path = std::env::current_dir().unwrap_or_default().join("vault-data").join("machine_id");
+        let machine_id = std::fs::read(&mid_path).unwrap_or_else(|_| vec![0u8; 32]);
+        let deriver = vault_crypto::hkdf::KeyDeriver::new(machine_id);
+        let wrap_key = deriver.derive_encryption_key(salt, b"SovereignKernel-HMAC-wrap-v1")?;
+        let decrypted = vault_crypto::keys::decrypt_aes_gcm(&wrap_key, encrypted, b"hmac-key-storage")?;
+        if decrypted.len() != 32 {
+            return Err(VaultError::Integrity("HMAC key lengte ongeldig".into()));
+        }
+        let mut key = [0u8; 32];
+        key.copy_from_slice(decrypted.expose_secret());
+        Ok(key)
+    }
+
     pub fn unlock(&mut self, provider: &str, credentials: &[u8]) -> VaultResult<()> {
         self.rate_limiter.check()?;
-        let rem = self.rate_limiter.remaining_attempts().unwrap_or(0);
-        let an = self.config.max_unlock_attempts.saturating_sub(rem) + 1;
 
         match self.unlock_internal(provider, credentials) {
             Ok(()) => {
@@ -142,6 +226,9 @@ impl Vault {
                 Ok(())
             }
             Err(e) => {
+                self.rate_limiter.record_failure()?;
+                let remaining = self.rate_limiter.remaining_attempts().unwrap_or(0);
+                let an = self.config.max_unlock_attempts.saturating_sub(remaining);
                 self.audit_logger.log(AuditEvent::FailedUnlockAttempt {
                     reason: e.to_string(),
                     attempt_number: an,
@@ -205,6 +292,7 @@ impl Vault {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn touch_activity(&mut self) {
         self.last_activity = Some(Instant::now());
     }
@@ -238,5 +326,6 @@ impl Drop for Vault {
         if self.is_unlocked {
             let _ = self.lock(LockReason::EmergencyShutdown);
         }
+        zeroize::Zeroize::zeroize(&mut self.integrity_hmac_key);
     }
 }

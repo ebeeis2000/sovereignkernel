@@ -45,17 +45,24 @@ impl std::fmt::Debug for DatabaseKey {
 }
 
 pub fn apply_sqlcipher_pragmas(conn: &rusqlite::Connection, key: &DatabaseKey) -> VaultResult<()> {
-    let pragma_key = format!("PRAGMA key = \"x'{}'\"", key.to_hex());
+    let hex_key = key.to_hex();
+    let pragma_key = format!("PRAGMA key = \"x'{}'\";\n", hex_key);
     conn.execute_batch(&pragma_key)
         .map_err(|e| VaultError::Crypto(format!("SQLCipher: kan encryptiesleutel niet instellen: {}", e)))?;
+
     conn.execute_batch(
         "PRAGMA cipher_page_size = 4096;
          PRAGMA kdf_iter = 256000;
          PRAGMA cipher_hmac_algorithm = HMAC_SHA512;
-         PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;",
+         PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;
+         PRAGMA cipher_memory_security = ON;",
     )
     .map_err(|e| VaultError::Crypto(format!("SQLCipher: kan cipher parameters niet configureren: {}", e)))?;
-    tracing::info!("SQLCipher PRAGMA's toegepast op database");
+
+    conn.query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
+        .map_err(|_| VaultError::Crypto("SQLCipher: sleutel verificatie mislukt — database kan niet ontsleuteld worden".into()))?;
+
+    tracing::info!("SQLCipher PRAGMA's toegepast en geverifieerd");
     Ok(())
 }
 

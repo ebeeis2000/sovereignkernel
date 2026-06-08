@@ -1,5 +1,6 @@
 use sha2::{Digest, Sha256};
 use vault_common::{VaultError, VaultResult};
+use vault_crypto::keys::constant_time_eq;
 
 pub struct StateValidator {
     expected_hash: Option<[u8; 32]>,
@@ -19,7 +20,7 @@ impl StateValidator {
         let current: [u8; 32] = Sha256::digest(data).into();
         match self.expected_hash {
             Some(expected) => {
-                if current == expected {
+                if constant_time_eq(&current, &expected) {
                     Ok(true)
                 } else {
                     Err(VaultError::Integrity("State hash mismatch".into()))

@@ -16,3 +16,4 @@ rusqlite = { workspace = true }
 rand = { workspace = true }
 tracing = { workspace = true }
 parking_lot = { workspace = true }
+hex = { workspace = true }

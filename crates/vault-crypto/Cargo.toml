@@ -12,7 +12,12 @@ sha2 = { workspace = true }
 hmac = { workspace = true }
 hkdf = { workspace = true }
 aes-gcm = { workspace = true }
+argon2 = { workspace = true }
 zeroize = { workspace = true }
 serde = { workspace = true }
 subtle = { workspace = true }
+tracing = { workspace = true }
 libc = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

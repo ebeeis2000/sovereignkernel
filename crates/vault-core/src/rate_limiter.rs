@@ -26,11 +26,12 @@ impl RateLimiter {
             let conn = pool.get().map_err(|e| VaultError::Storage(format!("Pool init: {}", e)))?;
             conn.execute_batch(
                 "PRAGMA journal_mode=WAL;
-                 PRAGMA synchronous=NORMAL;
+                 PRAGMA synchronous=FULL;
                  PRAGMA busy_timeout=5000;
                  CREATE TABLE IF NOT EXISTS rate_limit_attempts (
                      id INTEGER PRIMARY KEY AUTOINCREMENT,
-                     timestamp INTEGER NOT NULL
+                     timestamp INTEGER NOT NULL,
+                     success INTEGER NOT NULL DEFAULT 0
                  );
                  CREATE TABLE IF NOT EXISTS rate_limit_lockout (
                      key TEXT PRIMARY KEY,
@@ -101,11 +102,15 @@ impl RateLimiter {
         c.execute("DELETE FROM rate_limit_lockout WHERE key='global' AND locked_until <= ?1", [now]).ok();
         c.execute("DELETE FROM rate_limit_attempts WHERE timestamp < ?1", [now - self.window_seconds]).ok();
 
-        let count: i64 = c
-            .query_row("SELECT COUNT(*) FROM rate_limit_attempts", [], |r| r.get(0))
+        let failed_count: i64 = c
+            .query_row(
+                "SELECT COUNT(*) FROM rate_limit_attempts WHERE success = 0 AND timestamp >= ?1",
+                [now - self.window_seconds],
+                |r| r.get(0),
+            )
             .unwrap_or(0);
 
-        if count >= self.max_attempts as i64 {
+        if failed_count >= self.max_attempts as i64 {
             c.execute(
                 "INSERT OR REPLACE INTO rate_limit_lockout VALUES ('global', ?1)",
                 [now + self.lockout_seconds],
@@ -116,14 +121,24 @@ impl RateLimiter {
             });
         }
 
-        c.execute("INSERT INTO rate_limit_attempts (timestamp) VALUES (?1)", [now]).ok();
+        Ok(())
+    }
+
+    pub fn record_failure(&self) -> VaultResult<()> {
+        let c = self.pool.get().map_err(|e| VaultError::Internal(format!("Pool: {}", e)))?;
+        let now = chrono::Utc::now().timestamp();
+        c.execute("INSERT INTO rate_limit_attempts (timestamp, success) VALUES (?1, 0)", [now])
+            .map_err(|e| VaultError::Storage(e.to_string()))?;
         Ok(())
     }
 
     pub fn record_success(&self) -> VaultResult<()> {
         let c = self.pool.get().map_err(|e| VaultError::Internal(format!("Pool: {}", e)))?;
-        c.execute_batch("DELETE FROM rate_limit_attempts; DELETE FROM rate_limit_lockout WHERE key='global';")
-            .map_err(|e| VaultError::Storage(e.to_string()))?;
+        c.execute_batch(
+            "DELETE FROM rate_limit_attempts;
+             DELETE FROM rate_limit_lockout WHERE key='global';",
+        )
+        .map_err(|e| VaultError::Storage(e.to_string()))?;
         Ok(())
     }
 
@@ -140,7 +155,7 @@ impl RateLimiter {
         if locked { return Ok(0); }
         let count: i64 = c
             .query_row(
-                "SELECT COUNT(*) FROM rate_limit_attempts WHERE timestamp >= ?1",
+                "SELECT COUNT(*) FROM rate_limit_attempts WHERE success = 0 AND timestamp >= ?1",
                 [now - self.window_seconds],
                 |r| r.get(0),
             )

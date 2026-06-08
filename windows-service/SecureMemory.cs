@@ -14,9 +14,12 @@ public sealed class SecureMemory : IDisposable
 
     private const uint MEM_RESERVE = 0x2000, MEM_COMMIT = 0x1000, MEM_RELEASE = 0x8000;
     private const uint PAGE_RW = 0x04, PAGE_NO = 0x01;
+    private const int GCM_NONCE_SIZE = 12;
+    private const int GCM_TAG_SIZE = 16;
 
     private IntPtr _mem;
     private readonly int _sz;
+    private readonly int _allocSz;
     private readonly object _lk = new();
     private int _disposed;
     private bool _locked;
@@ -25,34 +28,45 @@ public sealed class SecureMemory : IDisposable
 
     public SecureMemory(int sz, bool lk = true, bool enc = true)
     {
-        if (sz <= 0 || sz % 4096 != 0)
-            throw new ArgumentException("Size must be a multiple of 4096");
+        if (sz <= 0)
+            throw new ArgumentException("Size must be positive");
 
         _sz = sz;
-        _mem = VirtualAlloc(IntPtr.Zero, (UIntPtr)_sz, MEM_RESERVE | MEM_COMMIT, PAGE_RW);
+        int overhead = enc ? GCM_NONCE_SIZE + GCM_TAG_SIZE : 0;
+        int rawNeeded = sz + overhead;
+        _allocSz = ((rawNeeded + 4095) / 4096) * 4096;
+
+        _mem = VirtualAlloc(IntPtr.Zero, (UIntPtr)_allocSz, MEM_RESERVE | MEM_COMMIT, PAGE_RW);
         if (_mem == IntPtr.Zero)
             throw new OutOfMemoryException($"VirtualAlloc failed: {Marshal.GetLastWin32Error()}");
 
         unsafe
         {
             byte* p = (byte*)_mem.ToPointer();
-            for (int i = 0; i < _sz; i++) p[i] = 0;
+            for (int i = 0; i < _allocSz; i++) p[i] = 0;
         }
 
-        if (lk) _locked = VirtualLock(_mem, (UIntPtr)_sz);
-        if (enc) { _ek = new byte[32]; RandomNumberGenerator.Fill(_ek); _enc = true; }
+        if (lk) _locked = VirtualLock(_mem, (UIntPtr)_allocSz);
+        if (enc)
+        {
+            _ek = new byte[32];
+            RandomNumberGenerator.Fill(_ek);
+            _enc = true;
+        }
     }
 
     public void Write(byte[] d, int o = 0)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(d);
-        if (o < 0 || o + d.Length > _sz)
-            throw new ArgumentOutOfRangeException();
+        if (o < 0 || d.Length > _sz || o + d.Length > _sz)
+            throw new ArgumentOutOfRangeException(nameof(o), "Data overschrijdt beveiligde geheugengrens");
 
         lock (_lk)
         {
             byte[] w = _enc && _ek != null ? Enc(d) : d;
+            if (w.Length > _allocSz)
+                throw new InvalidOperationException("Versleutelde data overschrijdt allocatie — intern fout");
             Marshal.Copy(w, 0, _mem + o, w.Length);
             if (w != d) CryptographicOperations.ZeroMemory(w);
         }
@@ -61,13 +75,15 @@ public sealed class SecureMemory : IDisposable
     public byte[] Read(int o, int l)
     {
         ThrowIfDisposed();
-        if (o < 0 || l < 0 || o + l > _sz)
+        if (o < 0 || l < 0 || l > _sz || o + l > _allocSz)
             throw new ArgumentOutOfRangeException();
 
         lock (_lk)
         {
-            byte[] b = new byte[l];
-            Marshal.Copy(_mem + o, b, 0, l);
+            int readLen = _enc && _ek != null ? l + GCM_NONCE_SIZE + GCM_TAG_SIZE : l;
+            if (o + readLen > _allocSz) readLen = _allocSz - o;
+            byte[] b = new byte[readLen];
+            Marshal.Copy(_mem + o, b, 0, readLen);
             return _enc && _ek != null ? Dec(b) : b;
         }
     }
@@ -82,10 +98,10 @@ public sealed class SecureMemory : IDisposable
                 unsafe
                 {
                     byte* p = (byte*)_mem.ToPointer();
-                    for (int i = 0; i < _sz; i++) p[i] = 0;
+                    for (int i = 0; i < _allocSz; i++) p[i] = 0;
                 }
-                VirtualProtect(_mem, (UIntPtr)_sz, PAGE_NO, out _);
-                if (_locked) VirtualUnlock(_mem, (UIntPtr)_sz);
+                VirtualProtect(_mem, (UIntPtr)_allocSz, PAGE_NO, out _);
+                if (_locked) VirtualUnlock(_mem, (UIntPtr)_allocSz);
                 VirtualFree(_mem, UIntPtr.Zero, MEM_RELEASE);
                 _mem = IntPtr.Zero;
             }
@@ -104,30 +120,33 @@ public sealed class SecureMemory : IDisposable
 
     private byte[] Enc(byte[] d)
     {
-        using var a = Aes.Create();
-        a.Key = _ek!;
-        a.Mode = CipherMode.CBC;
-        a.Padding = PaddingMode.PKCS7;
-        a.GenerateIV();
-        using var e = a.CreateEncryptor();
-        byte[] c = e.TransformFinalBlock(d, 0, d.Length);
-        byte[] r = new byte[16 + c.Length];
-        Buffer.BlockCopy(a.IV, 0, r, 0, 16);
-        Buffer.BlockCopy(c, 0, r, 16, c.Length);
-        return r;
+        byte[] nonce = new byte[GCM_NONCE_SIZE];
+        RandomNumberGenerator.Fill(nonce);
+        byte[] ciphertext = new byte[d.Length];
+        byte[] tag = new byte[GCM_TAG_SIZE];
+        using var aesGcm = new AesGcm(_ek!, GCM_TAG_SIZE);
+        aesGcm.Encrypt(nonce, d, ciphertext, tag);
+        byte[] result = new byte[GCM_NONCE_SIZE + ciphertext.Length + GCM_TAG_SIZE];
+        Buffer.BlockCopy(nonce, 0, result, 0, GCM_NONCE_SIZE);
+        Buffer.BlockCopy(ciphertext, 0, result, GCM_NONCE_SIZE, ciphertext.Length);
+        Buffer.BlockCopy(tag, 0, result, GCM_NONCE_SIZE + ciphertext.Length, GCM_TAG_SIZE);
+        return result;
     }
 
     private byte[] Dec(byte[] d)
     {
-        byte[] iv = new byte[16], c = new byte[d.Length - 16];
-        Buffer.BlockCopy(d, 0, iv, 0, 16);
-        Buffer.BlockCopy(d, 16, c, 0, c.Length);
-        using var a = Aes.Create();
-        a.Key = _ek!;
-        a.IV = iv;
-        a.Mode = CipherMode.CBC;
-        a.Padding = PaddingMode.PKCS7;
-        using var dec = a.CreateDecryptor();
-        return dec.TransformFinalBlock(c, 0, c.Length);
+        if (d.Length < GCM_NONCE_SIZE + GCM_TAG_SIZE)
+            throw new CryptographicException("Data te kort voor AES-GCM decryptie");
+        byte[] nonce = new byte[GCM_NONCE_SIZE];
+        int cipherLen = d.Length - GCM_NONCE_SIZE - GCM_TAG_SIZE;
+        byte[] ciphertext = new byte[cipherLen];
+        byte[] tag = new byte[GCM_TAG_SIZE];
+        Buffer.BlockCopy(d, 0, nonce, 0, GCM_NONCE_SIZE);
+        Buffer.BlockCopy(d, GCM_NONCE_SIZE, ciphertext, 0, cipherLen);
+        Buffer.BlockCopy(d, GCM_NONCE_SIZE + cipherLen, tag, 0, GCM_TAG_SIZE);
+        byte[] plaintext = new byte[cipherLen];
+        using var aesGcm = new AesGcm(_ek!, GCM_TAG_SIZE);
+        aesGcm.Decrypt(nonce, ciphertext, tag, plaintext);
+        return plaintext;
     }
 }

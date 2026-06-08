@@ -21,6 +21,15 @@ internal static class Program
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             EventLog.WriteEntry("SovereignKernelVault", $"Unhandled: {(e.ExceptionObject as Exception)?.Message}", EventLogEntryType.Error, 9999);
 
+        if (!IntegrityCheck.VerifySelfIntegrity())
+        {
+            Console.Error.WriteLine("FATAAL: Integriteitscontrole mislukt — binary is gewijzigd!");
+            EventLog.WriteEntry("SovereignKernelVault",
+                "Service weigert te starten: binary integriteitscontrole mislukt",
+                EventLogEntryType.Error, 9000);
+            return 99;
+        }
+
         string commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
         if (string.IsNullOrEmpty(commonAppData)) commonAppData = @"C:\ProgramData";
 

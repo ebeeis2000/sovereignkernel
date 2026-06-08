@@ -148,9 +148,44 @@ impl TpmManager {
         Ok(())
     }
 
+    #[cfg(feature = "tpm")]
     fn read_pcr_baseline(&self) -> VaultResult<[u8; 32]> {
+        use tss_esapi::interface_types::algorithm::HashingAlgorithm;
+        use tss_esapi::structures::PcrSelectionListBuilder;
+
+        let tcti = tss_esapi::tcti_ldr::TctiNameConf::from_environment_variable()
+            .unwrap_or_else(|_| "device:/dev/tpmrm0".parse().unwrap());
+        let mut ctx = tss_esapi::Context::new(tcti)
+            .map_err(|e| VaultError::Tpm(format!("TPM context: {}", e)))?;
+
+        let pcr_list = PcrSelectionListBuilder::new()
+            .with_selection(HashingAlgorithm::Sha256, &[0, 1, 2, 3, 4, 5, 6, 7])
+            .build()
+            .map_err(|e| VaultError::Tpm(format!("PCR selectie: {}", e)))?;
+
+        let (_update_counter, _sel, digests) = ctx
+            .execute_without_session(|c| c.pcr_read(pcr_list))
+            .map_err(|e| VaultError::Tpm(format!("PCR lezen: {}", e)))?;
+
         let mut h = Sha256::new();
-        h.update(b"pcr-baseline-placeholder");
+        for digest in digests.value() {
+            h.update(digest.as_bytes());
+        }
+        Ok(h.finalize().into())
+    }
+
+    #[cfg(not(feature = "tpm"))]
+    fn read_pcr_baseline(&self) -> VaultResult<[u8; 32]> {
+        let machine_id_path = std::env::current_dir()
+            .unwrap_or_default()
+            .join("vault-data")
+            .join("machine_id");
+        let machine_data = std::fs::read(&machine_id_path).unwrap_or_else(|_| vec![0u8; 32]);
+        let mut h = Sha256::new();
+        h.update(b"SovereignKernel-PCR-Simulation-v1");
+        h.update(&machine_data);
+        h.update(std::env::consts::OS.as_bytes());
+        h.update(std::env::consts::ARCH.as_bytes());
         Ok(h.finalize().into())
     }
 

@@ -150,13 +150,14 @@ fn gf256_mul(mut a: u8, mut b: u8) -> u8 {
 }
 
 fn gf256_inv(a: u8) -> u8 {
-    if a == 0 { return 0; }
     let mut result = a;
     for _ in 0..6 {
         result = gf256_mul(result, result);
         result = gf256_mul(result, a);
     }
-    gf256_mul(result, result)
+    result = gf256_mul(result, result);
+    let is_zero = 0u8.wrapping_sub((a == 0) as u8);
+    result & !is_zero
 }
 
 #[cfg(test)]
