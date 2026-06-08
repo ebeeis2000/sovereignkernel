@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use vault_audit::AuditLogger;
 use vault_core::{DatabaseKey, needs_migration, migrate_to_encrypted};
 
@@ -56,7 +56,7 @@ fn main() {
     }
 }
 
-fn verify_audit(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn verify_audit(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let path_str = db_path.to_str().ok_or("Ongeldig pad")?;
     let logger = AuditLogger::new(path_str, [0u8; 32], None, None)?;
     let result = logger.verify_chain()?;
@@ -76,7 +76,7 @@ fn verify_audit(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn migrate_db(db_path: &PathBuf, key_hex: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn migrate_db(db_path: &Path, key_hex: &str) -> Result<(), Box<dyn std::error::Error>> {
     let key_bytes = hex::decode(key_hex)?;
     if key_bytes.len() != 32 {
         return Err("Key moet 32 bytes (64 hex karakters) zijn".into());
@@ -93,14 +93,14 @@ fn migrate_db(db_path: &PathBuf, key_hex: &str) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-fn check_migration(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn check_migration(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let needs = needs_migration(db_path)?;
     println!("Database: {}", db_path.display());
     println!("Migratie nodig: {}", if needs { "JA" } else { "NEE" });
     Ok(())
 }
 
-fn show_stats(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn show_stats(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let path_str = db_path.to_str().ok_or("Ongeldig pad")?;
     let logger = AuditLogger::new(path_str, [0u8; 32], None, None)?;
     let size = logger.database_size_bytes()?;
