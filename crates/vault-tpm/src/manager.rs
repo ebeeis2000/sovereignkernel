@@ -103,7 +103,9 @@ impl TpmManager {
 
         if !state.verify_integrity(hmac_key)? {
             error!("TPM state integriteitscontrole mislukt");
-            return Err(VaultError::Integrity("TPM state HMAC verificatie mislukt".into()));
+            return Err(VaultError::Integrity(
+                "TPM state HMAC verificatie mislukt".into(),
+            ));
         }
 
         Ok(state)
