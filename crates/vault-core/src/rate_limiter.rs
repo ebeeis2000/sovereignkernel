@@ -23,7 +23,9 @@ impl RateLimiter {
             .map_err(|e| VaultError::Storage(format!("RateLimiter pool: {}", e)))?;
 
         {
-            let conn = pool.get().map_err(|e| VaultError::Storage(format!("Pool init: {}", e)))?;
+            let conn = pool
+                .get()
+                .map_err(|e| VaultError::Storage(format!("Pool init: {}", e)))?;
             conn.execute_batch(
                 "PRAGMA journal_mode=WAL;
                  PRAGMA synchronous=FULL;
@@ -51,7 +53,10 @@ impl RateLimiter {
     }
 
     pub fn check(&self) -> VaultResult<()> {
-        let c = self.pool.get().map_err(|e| VaultError::Internal(format!("Pool: {}", e)))?;
+        let c = self
+            .pool
+            .get()
+            .map_err(|e| VaultError::Internal(format!("Pool: {}", e)))?;
         let max_retries = 3u64;
         let mut attempt = 0u64;
         loop {
@@ -68,8 +73,12 @@ impl RateLimiter {
 
         let r = self.check_inner(&c);
         match &r {
-            Ok(()) => { c.execute("COMMIT", []).ok(); }
-            Err(_) => { c.execute("ROLLBACK", []).ok(); }
+            Ok(()) => {
+                c.execute("COMMIT", []).ok();
+            }
+            Err(_) => {
+                c.execute("ROLLBACK", []).ok();
+            }
         }
         r
     }
@@ -99,8 +108,16 @@ impl RateLimiter {
             });
         }
 
-        c.execute("DELETE FROM rate_limit_lockout WHERE key='global' AND locked_until <= ?1", [now]).ok();
-        c.execute("DELETE FROM rate_limit_attempts WHERE timestamp < ?1", [now - self.window_seconds]).ok();
+        c.execute(
+            "DELETE FROM rate_limit_lockout WHERE key='global' AND locked_until <= ?1",
+            [now],
+        )
+        .ok();
+        c.execute(
+            "DELETE FROM rate_limit_attempts WHERE timestamp < ?1",
+            [now - self.window_seconds],
+        )
+        .ok();
 
         let failed_count: i64 = c
             .query_row(
@@ -114,7 +131,8 @@ impl RateLimiter {
             c.execute(
                 "INSERT OR REPLACE INTO rate_limit_lockout VALUES ('global', ?1)",
                 [now + self.lockout_seconds],
-            ).ok();
+            )
+            .ok();
             return Err(VaultError::RateLimited {
                 retry_after_seconds: self.lockout_seconds as u64,
                 remaining_attempts: 0,
@@ -125,15 +143,24 @@ impl RateLimiter {
     }
 
     pub fn record_failure(&self) -> VaultResult<()> {
-        let c = self.pool.get().map_err(|e| VaultError::Internal(format!("Pool: {}", e)))?;
+        let c = self
+            .pool
+            .get()
+            .map_err(|e| VaultError::Internal(format!("Pool: {}", e)))?;
         let now = chrono::Utc::now().timestamp();
-        c.execute("INSERT INTO rate_limit_attempts (timestamp, success) VALUES (?1, 0)", [now])
-            .map_err(|e| VaultError::Storage(e.to_string()))?;
+        c.execute(
+            "INSERT INTO rate_limit_attempts (timestamp, success) VALUES (?1, 0)",
+            [now],
+        )
+        .map_err(|e| VaultError::Storage(e.to_string()))?;
         Ok(())
     }
 
     pub fn record_success(&self) -> VaultResult<()> {
-        let c = self.pool.get().map_err(|e| VaultError::Internal(format!("Pool: {}", e)))?;
+        let c = self
+            .pool
+            .get()
+            .map_err(|e| VaultError::Internal(format!("Pool: {}", e)))?;
         c.execute_batch(
             "DELETE FROM rate_limit_attempts;
              DELETE FROM rate_limit_lockout WHERE key='global';",
@@ -143,7 +170,10 @@ impl RateLimiter {
     }
 
     pub fn remaining_attempts(&self) -> VaultResult<u32> {
-        let c = self.pool.get().map_err(|e| VaultError::Internal(format!("Pool: {}", e)))?;
+        let c = self
+            .pool
+            .get()
+            .map_err(|e| VaultError::Internal(format!("Pool: {}", e)))?;
         let now = chrono::Utc::now().timestamp();
         let locked: bool = c
             .query_row(
@@ -152,7 +182,9 @@ impl RateLimiter {
                 |r| r.get(0),
             )
             .unwrap_or(false);
-        if locked { return Ok(0); }
+        if locked {
+            return Ok(0);
+        }
         let count: i64 = c
             .query_row(
                 "SELECT COUNT(*) FROM rate_limit_attempts WHERE success = 0 AND timestamp >= ?1",

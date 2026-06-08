@@ -1,10 +1,14 @@
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use vault_audit::AuditLogger;
-use vault_core::{DatabaseKey, needs_migration, migrate_to_encrypted};
+use vault_core::{migrate_to_encrypted, needs_migration, DatabaseKey};
 
 #[derive(Parser)]
-#[command(name = "vault-db-tool", version, about = "SovereignKernel Database Management Tool")]
+#[command(
+    name = "vault-db-tool",
+    version,
+    about = "SovereignKernel Database Management Tool"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -56,7 +60,7 @@ fn main() {
     }
 }
 
-fn verify_audit(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn verify_audit(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let path_str = db_path.to_str().ok_or("Ongeldig pad")?;
     let logger = AuditLogger::new(path_str, [0u8; 32], None, None)?;
     let result = logger.verify_chain()?;
@@ -64,7 +68,14 @@ fn verify_audit(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     println!("=== Audit Chain Verificatie ===");
     println!("Totaal entries: {}", result.total_entries);
     println!("Integriteit: {:.2}%", result.integrity_percentage());
-    println!("Status: {}", if result.is_intact { "INTACT" } else { "BESCHADIGD" });
+    println!(
+        "Status: {}",
+        if result.is_intact {
+            "INTACT"
+        } else {
+            "BESCHADIGD"
+        }
+    );
 
     if !result.tampered_entries.is_empty() {
         println!("\nBeschadigde entries:");
@@ -76,7 +87,7 @@ fn verify_audit(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn migrate_db(db_path: &PathBuf, key_hex: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn migrate_db(db_path: &Path, key_hex: &str) -> Result<(), Box<dyn std::error::Error>> {
     let key_bytes = hex::decode(key_hex)?;
     if key_bytes.len() != 32 {
         return Err("Key moet 32 bytes (64 hex karakters) zijn".into());
@@ -93,14 +104,14 @@ fn migrate_db(db_path: &PathBuf, key_hex: &str) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-fn check_migration(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn check_migration(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let needs = needs_migration(db_path)?;
     println!("Database: {}", db_path.display());
     println!("Migratie nodig: {}", if needs { "JA" } else { "NEE" });
     Ok(())
 }
 
-fn show_stats(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn show_stats(db_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let path_str = db_path.to_str().ok_or("Ongeldig pad")?;
     let logger = AuditLogger::new(path_str, [0u8; 32], None, None)?;
     let size = logger.database_size_bytes()?;
@@ -108,7 +119,11 @@ fn show_stats(db_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 
     println!("=== Database Statistieken ===");
     println!("Pad: {}", db_path.display());
-    println!("Grootte: {} bytes ({:.2} MB)", size, size as f64 / 1_048_576.0);
+    println!(
+        "Grootte: {} bytes ({:.2} MB)",
+        size,
+        size as f64 / 1_048_576.0
+    );
     println!("Events in huidig window: {}", events_window);
     println!("Totaal gedropt: {}", events_dropped);
     Ok(())

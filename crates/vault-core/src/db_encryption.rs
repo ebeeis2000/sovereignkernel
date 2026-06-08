@@ -9,7 +9,9 @@ pub struct DatabaseKey {
 impl DatabaseKey {
     pub fn from_master_key(master_key: &[u8], db_name: &str) -> VaultResult<Self> {
         if master_key.len() != 32 {
-            return Err(VaultError::Crypto("Master key moet 32 bytes zijn voor database encryptie".into()));
+            return Err(VaultError::Crypto(
+                "Master key moet 32 bytes zijn voor database encryptie".into(),
+            ));
         }
         let deriver = KeyDeriver::new(master_key.to_vec());
         let derived = deriver.derive_encryption_key(
@@ -47,8 +49,12 @@ impl std::fmt::Debug for DatabaseKey {
 pub fn apply_sqlcipher_pragmas(conn: &rusqlite::Connection, key: &DatabaseKey) -> VaultResult<()> {
     let hex_key = key.to_hex();
     let pragma_key = format!("PRAGMA key = \"x'{}'\";\n", hex_key);
-    conn.execute_batch(&pragma_key)
-        .map_err(|e| VaultError::Crypto(format!("SQLCipher: kan encryptiesleutel niet instellen: {}", e)))?;
+    conn.execute_batch(&pragma_key).map_err(|e| {
+        VaultError::Crypto(format!(
+            "SQLCipher: kan encryptiesleutel niet instellen: {}",
+            e
+        ))
+    })?;
 
     conn.execute_batch(
         "PRAGMA cipher_page_size = 4096;
@@ -57,16 +63,30 @@ pub fn apply_sqlcipher_pragmas(conn: &rusqlite::Connection, key: &DatabaseKey) -
          PRAGMA cipher_kdf_algorithm = PBKDF2_HMAC_SHA512;
          PRAGMA cipher_memory_security = ON;",
     )
-    .map_err(|e| VaultError::Crypto(format!("SQLCipher: kan cipher parameters niet configureren: {}", e)))?;
+    .map_err(|e| {
+        VaultError::Crypto(format!(
+            "SQLCipher: kan cipher parameters niet configureren: {}",
+            e
+        ))
+    })?;
 
     conn.query_row("SELECT count(*) FROM sqlite_master", [], |_| Ok(()))
-        .map_err(|_| VaultError::Crypto("SQLCipher: sleutel verificatie mislukt — database kan niet ontsleuteld worden".into()))?;
+        .map_err(|_| {
+            VaultError::Crypto(
+                "SQLCipher: sleutel verificatie mislukt — database kan niet ontsleuteld worden"
+                    .into(),
+            )
+        })?;
 
     tracing::info!("SQLCipher PRAGMA's toegepast en geverifieerd");
     Ok(())
 }
 
-pub fn open_encrypted_database(path: &str, key: &DatabaseKey, create: bool) -> VaultResult<rusqlite::Connection> {
+pub fn open_encrypted_database(
+    path: &str,
+    key: &DatabaseKey,
+    create: bool,
+) -> VaultResult<rusqlite::Connection> {
     if create && !std::path::Path::new(path).exists() {
         if let Some(parent) = std::path::Path::new(path).parent() {
             std::fs::create_dir_all(parent)
@@ -89,7 +109,10 @@ pub fn is_database_encrypted(path: &str) -> VaultResult<bool> {
             if msg.contains("encrypted") || msg.contains("not a database") {
                 Ok(true)
             } else {
-                Err(VaultError::Storage(format!("Kan database status niet bepalen: {}", e)))
+                Err(VaultError::Storage(format!(
+                    "Kan database status niet bepalen: {}",
+                    e
+                )))
             }
         }
     }

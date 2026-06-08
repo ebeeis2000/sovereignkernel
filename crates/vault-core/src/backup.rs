@@ -14,8 +14,9 @@ pub struct BackupManager {
 impl BackupManager {
     pub fn new(data_dir: &Path) -> VaultResult<Self> {
         let backup_dir = data_dir.join("backups");
-        fs::create_dir_all(&backup_dir)
-            .map_err(|e| VaultError::Storage(format!("Kan backup directory niet aanmaken: {}", e)))?;
+        fs::create_dir_all(&backup_dir).map_err(|e| {
+            VaultError::Storage(format!("Kan backup directory niet aanmaken: {}", e))
+        })?;
         Ok(Self {
             data_dir: data_dir.to_path_buf(),
             backup_dir,
@@ -43,8 +44,9 @@ impl BackupManager {
             let src = self.data_dir.join(filename);
             if src.exists() {
                 let dst = backup_path.join(filename);
-                fs::copy(&src, &dst)
-                    .map_err(|e| VaultError::Storage(format!("Backup kopie mislukt voor {}: {}", filename, e)))?;
+                fs::copy(&src, &dst).map_err(|e| {
+                    VaultError::Storage(format!("Backup kopie mislukt voor {}: {}", filename, e))
+                })?;
 
                 let hash = self.compute_file_hash(&dst)?;
                 manifest.push(format!("{}  {}", hex::encode(hash), filename));
@@ -73,7 +75,10 @@ impl BackupManager {
         for line in manifest.lines() {
             let parts: Vec<&str> = line.splitn(2, "  ").collect();
             if parts.len() != 2 {
-                return Err(VaultError::Integrity(format!("Ongeldig manifest formaat: {}", line)));
+                return Err(VaultError::Integrity(format!(
+                    "Ongeldig manifest formaat: {}",
+                    line
+                )));
             }
 
             let expected_hex = parts[0];
@@ -81,7 +86,10 @@ impl BackupManager {
             let file_path = backup_path.join(filename);
 
             if !file_path.exists() {
-                return Err(VaultError::Integrity(format!("Bestand ontbreekt in backup: {}", filename)));
+                return Err(VaultError::Integrity(format!(
+                    "Bestand ontbreekt in backup: {}",
+                    filename
+                )));
             }
 
             let actual_hash = self.compute_file_hash(&file_path)?;
@@ -107,13 +115,16 @@ impl BackupManager {
 
         for line in manifest.lines() {
             let parts: Vec<&str> = line.splitn(2, "  ").collect();
-            if parts.len() != 2 { continue; }
+            if parts.len() != 2 {
+                continue;
+            }
             let filename = parts[1];
             let src = backup_path.join(filename);
             let dst = self.data_dir.join(filename);
 
-            fs::copy(&src, &dst)
-                .map_err(|e| VaultError::Storage(format!("Restore mislukt voor {}: {}", filename, e)))?;
+            fs::copy(&src, &dst).map_err(|e| {
+                VaultError::Storage(format!("Restore mislukt voor {}: {}", filename, e))
+            })?;
         }
 
         tracing::info!("Backup hersteld van: {}", backup_path.display());
@@ -124,7 +135,9 @@ impl BackupManager {
         let mut backups: Vec<PathBuf> = fs::read_dir(&self.backup_dir)
             .map_err(|e| VaultError::Storage(format!("Kan backups niet lezen: {}", e)))?
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().is_dir() && e.file_name().to_string_lossy().starts_with("vault_backup_"))
+            .filter(|e| {
+                e.path().is_dir() && e.file_name().to_string_lossy().starts_with("vault_backup_")
+            })
             .map(|e| e.path())
             .collect();
 
@@ -138,8 +151,9 @@ impl BackupManager {
         if backups.len() > MAX_BACKUPS {
             for old_backup in &backups[MAX_BACKUPS..] {
                 tracing::info!("Oude backup verwijderen: {}", old_backup.display());
-                fs::remove_dir_all(old_backup)
-                    .map_err(|e| VaultError::Storage(format!("Kan oude backup niet verwijderen: {}", e)))?;
+                fs::remove_dir_all(old_backup).map_err(|e| {
+                    VaultError::Storage(format!("Kan oude backup niet verwijderen: {}", e))
+                })?;
             }
         }
         Ok(())

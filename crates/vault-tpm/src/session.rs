@@ -20,12 +20,23 @@ pub struct TpmSessionGuard<'a> {
 impl<'a> TpmSessionGuard<'a> {
     pub fn new_encrypted(c: &'a mut Context) -> VaultResult<Self> {
         let s = c
-            .start_auth_session(None, None, None, SessionType::Hmac, Cipher::aes_128_cfb(), HashingAlgorithm::Sha256)
+            .start_auth_session(
+                None,
+                None,
+                None,
+                SessionType::Hmac,
+                Cipher::aes_128_cfb(),
+                HashingAlgorithm::Sha256,
+            )
             .map_err(|e| vault_common::VaultError::Tpm(format!("Session start: {}", e)))?;
         let handle: SessionHandle = s
             .try_into()
             .map_err(|e| vault_common::VaultError::Tpm(format!("Session handle: {:?}", e)))?;
-        Ok(Self { context: c, handle, active: true })
+        Ok(Self {
+            context: c,
+            handle,
+            active: true,
+        })
     }
 
     pub fn handle(&self) -> SessionHandle {

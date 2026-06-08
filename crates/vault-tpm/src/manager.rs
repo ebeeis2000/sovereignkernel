@@ -44,18 +44,23 @@ pub struct TpmManager {
 
 impl TpmManager {
     pub fn new() -> VaultResult<Self> {
-        Ok(Self { audit_logger: None, available: Self::is_available() })
+        Ok(Self {
+            audit_logger: None,
+            available: Self::is_available(),
+        })
     }
 
     pub fn new_with_audit(audit: Option<Arc<AuditLogger>>) -> VaultResult<Self> {
-        Ok(Self { audit_logger: audit, available: Self::is_available() })
+        Ok(Self {
+            audit_logger: audit,
+            available: Self::is_available(),
+        })
     }
 
     pub fn is_available() -> bool {
         #[cfg(target_os = "windows")]
         {
-            std::path::Path::new(r"\\.\TPM").exists()
-                || std::env::var("SWTPM_ACTIVE").is_ok()
+            std::path::Path::new(r"\\.\TPM").exists() || std::env::var("SWTPM_ACTIVE").is_ok()
         }
         #[cfg(not(target_os = "windows"))]
         {
@@ -65,7 +70,11 @@ impl TpmManager {
         }
     }
 
-    pub fn initialize_vault(&mut self, state_path: &str, hmac_key: &[u8; 32]) -> VaultResult<TpmState> {
+    pub fn initialize_vault(
+        &mut self,
+        state_path: &str,
+        hmac_key: &[u8; 32],
+    ) -> VaultResult<TpmState> {
         info!("Initialisatie vault TPM state: {}", state_path);
         let master_key = random_256bit();
         let pcr_baseline = self.read_pcr_baseline()?;
@@ -103,7 +112,9 @@ impl TpmManager {
 
         if !state.verify_integrity(hmac_key)? {
             error!("TPM state integriteitscontrole mislukt");
-            return Err(VaultError::Integrity("TPM state HMAC verificatie mislukt".into()));
+            return Err(VaultError::Integrity(
+                "TPM state HMAC verificatie mislukt".into(),
+            ));
         }
 
         Ok(state)
@@ -125,7 +136,9 @@ impl TpmManager {
                     affected_pcrs: vec![0, 1, 2, 3, 4, 5, 6, 7],
                 });
             }
-            return Err(VaultError::Tpm("PCR baseline mismatch - mogelijke tampering".into()));
+            return Err(VaultError::Tpm(
+                "PCR baseline mismatch - mogelijke tampering".into(),
+            ));
         }
 
         if let Some(ref logger) = self.audit_logger {

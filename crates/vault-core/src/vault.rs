@@ -80,7 +80,11 @@ impl Vault {
         )?;
 
         let al = Arc::new(AuditLogger::new(
-            config.data_dir.join("audit.db").to_str().ok_or_else(|| VaultError::Config("Ongeldig audit pad".into()))?,
+            config
+                .data_dir
+                .join("audit.db")
+                .to_str()
+                .ok_or_else(|| VaultError::Config("Ongeldig audit pad".into()))?,
             machine_id,
             Some(1000),
             Some(1_073_741_824),
@@ -131,24 +135,54 @@ impl Vault {
     fn dpapi_protect(data: &[u8]) -> VaultResult<Vec<u8>> {
         use std::ptr;
         #[repr(C)]
-        struct DataBlob { cb_data: u32, pb_data: *const u8 }
+        struct DataBlob {
+            cb_data: u32,
+            pb_data: *const u8,
+        }
         extern "system" {
             fn CryptProtectData(
-                pDataIn: *const DataBlob, szDataDescr: *const u16, pOptionalEntropy: *const DataBlob,
-                pvReserved: *const u8, pPromptStruct: *const u8, dwFlags: u32, pDataOut: *mut DataBlob,
+                pDataIn: *const DataBlob,
+                szDataDescr: *const u16,
+                pOptionalEntropy: *const DataBlob,
+                pvReserved: *const u8,
+                pPromptStruct: *const u8,
+                dwFlags: u32,
+                pDataOut: *mut DataBlob,
             ) -> i32;
             fn LocalFree(hMem: *const u8) -> *const u8;
         }
         let entropy = b"SovereignKernel-HMAC-DPAPI-v1";
-        let input = DataBlob { cb_data: data.len() as u32, pb_data: data.as_ptr() };
-        let ent = DataBlob { cb_data: entropy.len() as u32, pb_data: entropy.as_ptr() };
-        let mut output = DataBlob { cb_data: 0, pb_data: ptr::null() };
-        let ok = unsafe { CryptProtectData(&input, ptr::null(), &ent, ptr::null(), ptr::null(), 0x04, &mut output) };
+        let input = DataBlob {
+            cb_data: data.len() as u32,
+            pb_data: data.as_ptr(),
+        };
+        let ent = DataBlob {
+            cb_data: entropy.len() as u32,
+            pb_data: entropy.as_ptr(),
+        };
+        let mut output = DataBlob {
+            cb_data: 0,
+            pb_data: ptr::null(),
+        };
+        let ok = unsafe {
+            CryptProtectData(
+                &input,
+                ptr::null(),
+                &ent,
+                ptr::null(),
+                ptr::null(),
+                0x04,
+                &mut output,
+            )
+        };
         if ok == 0 {
             return Err(VaultError::Crypto("DPAPI CryptProtectData mislukt".into()));
         }
-        let result = unsafe { std::slice::from_raw_parts(output.pb_data, output.cb_data as usize).to_vec() };
-        unsafe { LocalFree(output.pb_data); }
+        let result =
+            unsafe { std::slice::from_raw_parts(output.pb_data, output.cb_data as usize).to_vec() };
+        unsafe {
+            LocalFree(output.pb_data);
+        }
         Ok(result)
     }
 
@@ -156,29 +190,64 @@ impl Vault {
     fn dpapi_unprotect(data: &[u8]) -> VaultResult<[u8; 32]> {
         use std::ptr;
         #[repr(C)]
-        struct DataBlob { cb_data: u32, pb_data: *const u8 }
+        struct DataBlob {
+            cb_data: u32,
+            pb_data: *const u8,
+        }
         extern "system" {
             fn CryptUnprotectData(
-                pDataIn: *const DataBlob, ppszDataDescr: *mut *const u16, pOptionalEntropy: *const DataBlob,
-                pvReserved: *const u8, pPromptStruct: *const u8, dwFlags: u32, pDataOut: *mut DataBlob,
+                pDataIn: *const DataBlob,
+                ppszDataDescr: *mut *const u16,
+                pOptionalEntropy: *const DataBlob,
+                pvReserved: *const u8,
+                pPromptStruct: *const u8,
+                dwFlags: u32,
+                pDataOut: *mut DataBlob,
             ) -> i32;
             fn LocalFree(hMem: *const u8) -> *const u8;
         }
         let entropy = b"SovereignKernel-HMAC-DPAPI-v1";
-        let input = DataBlob { cb_data: data.len() as u32, pb_data: data.as_ptr() };
-        let ent = DataBlob { cb_data: entropy.len() as u32, pb_data: entropy.as_ptr() };
-        let mut output = DataBlob { cb_data: 0, pb_data: ptr::null() };
-        let ok = unsafe { CryptUnprotectData(&input, ptr::null_mut(), &ent, ptr::null(), ptr::null(), 0x04, &mut output) };
+        let input = DataBlob {
+            cb_data: data.len() as u32,
+            pb_data: data.as_ptr(),
+        };
+        let ent = DataBlob {
+            cb_data: entropy.len() as u32,
+            pb_data: entropy.as_ptr(),
+        };
+        let mut output = DataBlob {
+            cb_data: 0,
+            pb_data: ptr::null(),
+        };
+        let ok = unsafe {
+            CryptUnprotectData(
+                &input,
+                ptr::null_mut(),
+                &ent,
+                ptr::null(),
+                ptr::null(),
+                0x04,
+                &mut output,
+            )
+        };
         if ok == 0 {
-            return Err(VaultError::Crypto("DPAPI CryptUnprotectData mislukt — mogelijke tampering".into()));
+            return Err(VaultError::Crypto(
+                "DPAPI CryptUnprotectData mislukt — mogelijke tampering".into(),
+            ));
         }
         if output.cb_data != 32 {
-            unsafe { LocalFree(output.pb_data); }
+            unsafe {
+                LocalFree(output.pb_data);
+            }
             return Err(VaultError::Integrity("DPAPI output lengte ongeldig".into()));
         }
         let mut key = [0u8; 32];
-        unsafe { key.copy_from_slice(std::slice::from_raw_parts(output.pb_data, 32)); }
-        unsafe { LocalFree(output.pb_data); }
+        unsafe {
+            key.copy_from_slice(std::slice::from_raw_parts(output.pb_data, 32));
+        }
+        unsafe {
+            LocalFree(output.pb_data);
+        }
         Ok(key)
     }
 
@@ -199,11 +268,15 @@ impl Vault {
             return Err(VaultError::Integrity("HMAC key bestand te kort".into()));
         }
         let (salt, encrypted) = data.split_at(16);
-        let mid_path = std::env::current_dir().unwrap_or_default().join("vault-data").join("machine_id");
+        let mid_path = std::env::current_dir()
+            .unwrap_or_default()
+            .join("vault-data")
+            .join("machine_id");
         let machine_id = std::fs::read(&mid_path).unwrap_or_else(|_| vec![0u8; 32]);
         let deriver = vault_crypto::hkdf::KeyDeriver::new(machine_id);
         let wrap_key = deriver.derive_encryption_key(salt, b"SovereignKernel-HMAC-wrap-v1")?;
-        let decrypted = vault_crypto::keys::decrypt_aes_gcm(&wrap_key, encrypted, b"hmac-key-storage")?;
+        let decrypted =
+            vault_crypto::keys::decrypt_aes_gcm(&wrap_key, encrypted, b"hmac-key-storage")?;
         if decrypted.len() != 32 {
             return Err(VaultError::Integrity("HMAC key lengte ongeldig".into()));
         }
@@ -242,10 +315,14 @@ impl Vault {
     fn unlock_internal(&mut self, provider: &str, _creds: &[u8]) -> VaultResult<()> {
         match provider {
             "tpm" => {
-                let tpm = self.tpm_manager.as_mut()
+                let tpm = self
+                    .tpm_manager
+                    .as_mut()
                     .ok_or_else(|| VaultError::Tpm("TPM niet beschikbaar".into()))?;
                 let tsp = self.config.data_dir.join("tpm_state.db");
-                let tss = tsp.to_str().ok_or_else(|| VaultError::Config("Ongeldig pad".into()))?;
+                let tss = tsp
+                    .to_str()
+                    .ok_or_else(|| VaultError::Config("Ongeldig pad".into()))?;
                 let mk = if Path::new(tss).exists() {
                     let mut s = tpm.load_state(tss, &self.integrity_hmac_key)?;
                     let k = tpm.unseal_with_pcr_validation(&mut s, &self.integrity_hmac_key)?;
@@ -260,7 +337,12 @@ impl Vault {
                 };
                 self.master_key = Some(SecretBytes::new(mk));
             }
-            _ => return Err(VaultError::Config(format!("Onbekende provider: {}", provider))),
+            _ => {
+                return Err(VaultError::Config(format!(
+                    "Onbekende provider: {}",
+                    provider
+                )))
+            }
         }
         self.is_unlocked = true;
         self.last_activity = Some(Instant::now());

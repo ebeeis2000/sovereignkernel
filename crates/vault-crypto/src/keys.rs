@@ -88,7 +88,10 @@ pub fn encrypt_aes_gcm(key: &[u8], plaintext: &[u8], aad: &[u8]) -> VaultResult<
         .map_err(|e| VaultError::Crypto(format!("AES-GCM cipher init: {}", e)))?;
     let nonce_bytes = generate_unique_nonce();
     let nonce = Nonce::from_slice(&nonce_bytes);
-    let payload = Payload { msg: plaintext, aad };
+    let payload = Payload {
+        msg: plaintext,
+        aad,
+    };
     let ciphertext = cipher
         .encrypt(nonce, payload)
         .map_err(|e| VaultError::Crypto(format!("AES-GCM encryptie: {}", e)))?;
@@ -98,7 +101,11 @@ pub fn encrypt_aes_gcm(key: &[u8], plaintext: &[u8], aad: &[u8]) -> VaultResult<
     Ok(result)
 }
 
-pub fn decrypt_aes_gcm(key: &[u8], ciphertext_with_nonce: &[u8], aad: &[u8]) -> VaultResult<SecretBytes> {
+pub fn decrypt_aes_gcm(
+    key: &[u8],
+    ciphertext_with_nonce: &[u8],
+    aad: &[u8],
+) -> VaultResult<SecretBytes> {
     if key.len() != 32 {
         return Err(VaultError::Crypto(
             "AES-256-GCM vereist een 32-byte sleutel".into(),
@@ -113,7 +120,10 @@ pub fn decrypt_aes_gcm(key: &[u8], ciphertext_with_nonce: &[u8], aad: &[u8]) -> 
     let nonce = Nonce::from_slice(nonce_bytes);
     let cipher = Aes256Gcm::new_from_slice(key)
         .map_err(|e| VaultError::Crypto(format!("AES-GCM cipher init: {}", e)))?;
-    let payload = Payload { msg: ciphertext, aad };
+    let payload = Payload {
+        msg: ciphertext,
+        aad,
+    };
     let plaintext = cipher
         .decrypt(nonce, payload)
         .map_err(|e| VaultError::Crypto(format!("AES-GCM decryptie/authenticatie: {}", e)))?;
@@ -124,7 +134,11 @@ pub fn decrypt_aes_gcm(key: &[u8], ciphertext_with_nonce: &[u8], aad: &[u8]) -> 
 pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     use subtle::ConstantTimeEq;
     let len_eq = a.len() == b.len();
-    let check_len = if len_eq { a.len() } else { a.len().min(b.len()) };
+    let check_len = if len_eq {
+        a.len()
+    } else {
+        a.len().min(b.len())
+    };
     let content_eq: bool = if check_len > 0 {
         a[..check_len].ct_eq(&b[..check_len]).into()
     } else {

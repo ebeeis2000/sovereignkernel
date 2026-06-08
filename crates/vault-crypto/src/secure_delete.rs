@@ -16,8 +16,9 @@ pub fn secure_delete(path: &Path) -> VaultResult<()> {
 
     let file_size = metadata.len() as usize;
     if file_size == 0 {
-        fs::remove_file(path)
-            .map_err(|e| VaultError::Storage(format!("Kan leeg bestand niet verwijderen: {}", e)))?;
+        fs::remove_file(path).map_err(|e| {
+            VaultError::Storage(format!("Kan leeg bestand niet verwijderen: {}", e))
+        })?;
         return Ok(());
     }
 
@@ -41,8 +42,9 @@ pub fn secure_delete(path: &Path) -> VaultResult<()> {
                 1 => buf[..chunk].fill(0xFF),
                 _ => rng.fill_bytes(&mut buf[..chunk]),
             }
-            file.write_all(&buf[..chunk])
-                .map_err(|e| VaultError::Storage(format!("Schrijf mislukt pass {}: {}", pass, e)))?;
+            file.write_all(&buf[..chunk]).map_err(|e| {
+                VaultError::Storage(format!("Schrijf mislukt pass {}: {}", pass, e))
+            })?;
             remaining -= chunk;
         }
 
@@ -54,10 +56,16 @@ pub fn secure_delete(path: &Path) -> VaultResult<()> {
 
     drop(file);
 
-    fs::remove_file(path)
-        .map_err(|e| VaultError::Storage(format!("Kan bestand niet verwijderen na wissen: {}", e)))?;
+    fs::remove_file(path).map_err(|e| {
+        VaultError::Storage(format!("Kan bestand niet verwijderen na wissen: {}", e))
+    })?;
 
-    tracing::debug!("Beveiligd verwijderd: {:?} ({} bytes, {} passes)", path, file_size, OVERWRITE_PASSES);
+    tracing::debug!(
+        "Beveiligd verwijderd: {:?} ({} bytes, {} passes)",
+        path,
+        file_size,
+        OVERWRITE_PASSES
+    );
     Ok(())
 }
 
@@ -69,8 +77,8 @@ pub fn secure_delete_dir(dir: &Path) -> VaultResult<()> {
     for entry in fs::read_dir(dir)
         .map_err(|e| VaultError::Storage(format!("Kan directory niet lezen: {}", e)))?
     {
-        let entry = entry
-            .map_err(|e| VaultError::Storage(format!("Directory entry fout: {}", e)))?;
+        let entry =
+            entry.map_err(|e| VaultError::Storage(format!("Directory entry fout: {}", e)))?;
         let path = entry.path();
         if path.is_dir() {
             secure_delete_dir(&path)?;

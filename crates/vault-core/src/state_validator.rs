@@ -8,7 +8,9 @@ pub struct StateValidator {
 
 impl StateValidator {
     pub fn new() -> Self {
-        Self { expected_hash: None }
+        Self {
+            expected_hash: None,
+        }
     }
 
     pub fn set_baseline(&mut self, data: &[u8]) {

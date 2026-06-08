@@ -52,9 +52,9 @@ impl ShamirScheme {
                 *coeff = b[0];
             }
 
-            for share_idx in 0..self.total {
+            for (share_idx, share) in shares.iter_mut().enumerate().take(self.total) {
                 let x = (share_idx as u8) + 1;
-                shares[share_idx][byte_idx] = evaluate_polynomial(&coefficients, x);
+                share[byte_idx] = evaluate_polynomial(&coefficients, x);
             }
 
             coefficients.zeroize();
@@ -69,7 +69,11 @@ impl ShamirScheme {
                     h.update(&data);
                     h.finalize().into()
                 };
-                ShamirShare { index: (i as u8) + 1, data, fingerprint }
+                ShamirShare {
+                    index: (i as u8) + 1,
+                    data,
+                    fingerprint,
+                }
             })
             .collect();
 
@@ -93,9 +97,9 @@ impl ShamirScheme {
         let mut secret = vec![0u8; secret_len];
         let xs: Vec<u8> = shares.iter().map(|s| s.index).collect();
 
-        for byte_idx in 0..secret_len {
+        for (byte_idx, secret_byte) in secret.iter_mut().enumerate().take(secret_len) {
             let ys: Vec<u8> = shares.iter().map(|s| s.data[byte_idx]).collect();
-            secret[byte_idx] = lagrange_interpolate(&xs[..self.threshold], &ys[..self.threshold], 0);
+            *secret_byte = lagrange_interpolate(&xs[..self.threshold], &ys[..self.threshold], 0);
         }
 
         Ok(secret)
@@ -125,7 +129,9 @@ fn lagrange_interpolate(xs: &[u8], ys: &[u8], at: u8) -> u8 {
     for i in 0..xs.len() {
         let mut basis: u8 = 1;
         for j in 0..xs.len() {
-            if i == j { continue; }
+            if i == j {
+                continue;
+            }
             let num = at ^ xs[j];
             let den = xs[i] ^ xs[j];
             basis = gf256_mul(basis, gf256_mul(num, gf256_inv(den)));

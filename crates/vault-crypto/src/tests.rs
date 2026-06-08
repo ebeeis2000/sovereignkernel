@@ -1,10 +1,16 @@
 #[cfg(test)]
 mod kdf_extended_tests {
-    use crate::kdf::{derive_key_argon2id, derive_key_argon2id_with_salt, verify_key_argon2id, Argon2Params};
+    use crate::kdf::{
+        derive_key_argon2id, derive_key_argon2id_with_salt, verify_key_argon2id, Argon2Params,
+    };
 
     #[test]
     fn test_different_passwords_different_keys() {
-        let params = Argon2Params { memory_kib: 1024, iterations: 1, parallelism: 1 };
+        let params = Argon2Params {
+            memory_kib: 1024,
+            iterations: 1,
+            parallelism: 1,
+        };
         let salt = [99u8; 32];
         let k1 = derive_key_argon2id_with_salt(b"password1", &salt, &params).unwrap();
         let k2 = derive_key_argon2id_with_salt(b"password2", &salt, &params).unwrap();
@@ -13,7 +19,11 @@ mod kdf_extended_tests {
 
     #[test]
     fn test_different_salts_different_keys() {
-        let params = Argon2Params { memory_kib: 1024, iterations: 1, parallelism: 1 };
+        let params = Argon2Params {
+            memory_kib: 1024,
+            iterations: 1,
+            parallelism: 1,
+        };
         let salt1 = [1u8; 32];
         let salt2 = [2u8; 32];
         let k1 = derive_key_argon2id_with_salt(b"same_password", &salt1, &params).unwrap();
@@ -23,7 +33,11 @@ mod kdf_extended_tests {
 
     #[test]
     fn test_random_salt_uniqueness() {
-        let params = Argon2Params { memory_kib: 1024, iterations: 1, parallelism: 1 };
+        let params = Argon2Params {
+            memory_kib: 1024,
+            iterations: 1,
+            parallelism: 1,
+        };
         let k1 = derive_key_argon2id(b"test", &params).unwrap();
         let k2 = derive_key_argon2id(b"test", &params).unwrap();
         // Different random salts → different keys
@@ -33,15 +47,24 @@ mod kdf_extended_tests {
 
     #[test]
     fn test_verify_wrong_password_fails() {
-        let params = Argon2Params { memory_kib: 1024, iterations: 1, parallelism: 1 };
+        let params = Argon2Params {
+            memory_kib: 1024,
+            iterations: 1,
+            parallelism: 1,
+        };
         let derived = derive_key_argon2id(b"correct_password", &params).unwrap();
-        let result = verify_key_argon2id(b"wrong_password", &derived.salt, &derived.key, &params).unwrap();
+        let result =
+            verify_key_argon2id(b"wrong_password", &derived.salt, &derived.key, &params).unwrap();
         assert!(!result);
     }
 
     #[test]
     fn test_unicode_password() {
-        let params = Argon2Params { memory_kib: 1024, iterations: 1, parallelism: 1 };
+        let params = Argon2Params {
+            memory_kib: 1024,
+            iterations: 1,
+            parallelism: 1,
+        };
         let password = "wàchtw00rd_ñ_über_中文".as_bytes();
         let derived = derive_key_argon2id(password, &params).unwrap();
         assert!(verify_key_argon2id(password, &derived.salt, &derived.key, &params).unwrap());
@@ -49,7 +72,11 @@ mod kdf_extended_tests {
 
     #[test]
     fn test_long_password() {
-        let params = Argon2Params { memory_kib: 1024, iterations: 1, parallelism: 1 };
+        let params = Argon2Params {
+            memory_kib: 1024,
+            iterations: 1,
+            parallelism: 1,
+        };
         let password = vec![b'A'; 10000];
         let derived = derive_key_argon2id(&password, &params).unwrap();
         assert!(verify_key_argon2id(&password, &derived.salt, &derived.key, &params).unwrap());
@@ -107,7 +134,7 @@ mod secure_delete_extended_tests {
 
 #[cfg(test)]
 mod keys_extended_tests {
-    use crate::keys::{constant_time_eq, encrypt_aes_gcm, decrypt_aes_gcm};
+    use crate::keys::{constant_time_eq, decrypt_aes_gcm, encrypt_aes_gcm};
 
     #[test]
     fn test_encrypt_produces_unique_ciphertexts() {

@@ -9,13 +9,16 @@ impl TpmCounter {
 
     #[cfg(feature = "tpm")]
     pub fn ensure_exists(context: &mut tss_esapi::Context) -> VaultResult<()> {
+        use tracing::info;
         use tss_esapi::interface_types::resource_handles::{NvIndexHandle, Provision};
         use tss_esapi::structures::NvPublicBuilder;
-        use tracing::info;
 
         let idx = NvIndexHandle::new(Self::COUNTER_NV_INDEX)
             .map_err(|e| VaultError::Tpm(format!("NV index: {}", e)))?;
-        if context.execute_with_nullauth_session(|c| c.nv_read_public(idx)).is_ok() {
+        if context
+            .execute_with_nullauth_session(|c| c.nv_read_public(idx))
+            .is_ok()
+        {
             info!("NV counter bestaat");
             return Ok(());
         }
@@ -77,7 +80,10 @@ impl TpmCounter {
     }
 
     #[cfg(feature = "tpm")]
-    pub fn validate_against_stored(context: &mut tss_esapi::Context, stored: u64) -> VaultResult<bool> {
+    pub fn validate_against_stored(
+        context: &mut tss_esapi::Context,
+        stored: u64,
+    ) -> VaultResult<bool> {
         let hw = Self::read(context)?;
         if stored != hw {
             tracing::warn!("NV counter mismatch! stored={} hw={}", stored, hw);

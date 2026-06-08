@@ -3,7 +3,11 @@ mod rate_limiter_tests {
     use crate::rate_limiter::RateLimiter;
     use tempfile::TempDir;
 
-    fn create_limiter(max_attempts: u32, window_sec: u64, lockout_sec: u64) -> (RateLimiter, TempDir) {
+    fn create_limiter(
+        max_attempts: u32,
+        window_sec: u64,
+        lockout_sec: u64,
+    ) -> (RateLimiter, TempDir) {
         let tmp = TempDir::new().unwrap();
         let db_path = tmp.path().join("rate_limit.db");
         let limiter = RateLimiter::new(db_path, max_attempts, window_sec, lockout_sec).unwrap();

@@ -42,9 +42,10 @@ impl VaultError {
 
     pub fn retry_after(&self) -> Option<Duration> {
         match self {
-            VaultError::RateLimited { retry_after_seconds, .. } => {
-                Some(Duration::from_secs(*retry_after_seconds))
-            }
+            VaultError::RateLimited {
+                retry_after_seconds,
+                ..
+            } => Some(Duration::from_secs(*retry_after_seconds)),
             _ => None,
         }
     }

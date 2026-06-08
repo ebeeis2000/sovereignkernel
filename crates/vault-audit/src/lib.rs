@@ -8,27 +8,97 @@ use vault_crypto::constant_time_eq;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AuditEvent {
-    VaultInitialized { tpm_available: bool, shamir_threshold: usize, shamir_total: usize },
-    VaultUnlocked { provider: String, shamir_shares_used: Option<usize>, tpm_pcr_valid: Option<bool> },
-    VaultLocked { reason: LockReason },
-    TpmUnsealAttempt { pcr_valid: bool, counter_valid: bool, success: bool },
-    TpmPcrMismatch { expected_pcr_hash: [u8; 32], actual_pcr_hash: [u8; 32], affected_pcrs: Vec<u8> },
-    TpmCounterValidationFailed { stored_counter: u64, hardware_counter: u64 },
-    TpmCounterIncremented { old_value: u64, new_value: u64 },
-    KeyRotation { old_key_fingerprint: [u8; 32], new_key_fingerprint: [u8; 32] },
-    ShamirSharesGenerated { threshold: usize, total: usize, share_fingerprints: Vec<[u8; 32]> },
-    ShamirSharesCombined { shares_used: usize, threshold: usize },
-    RecoveryInitiated { package_hash: [u8; 32], usb_serial: Option<String>, wots_verified: bool },
-    RecoveryCompleted { vault_id: String, new_pcr_baseline: [u8; 32] },
-    TpmProvisioned { tpm_manufacturer: String, ek_cert_thumbprint: [u8; 32] },
-    TpmError { error_code: String, operation: String },
-    FailedUnlockAttempt { reason: String, attempt_number: u32, provider: String },
-    RateLimitExceeded { attempts_in_window: u32, lockout_duration_secs: u64 },
-    ConfigurationChanged { changed_fields: Vec<String>, previous_hash: [u8; 32], new_hash: [u8; 32] },
-    UnauthorizedAccessAttempt { source: String, method: String },
-    ServiceStarted { version: String, build_hash: [u8; 32] },
-    ServiceStopped { reason: String, uptime_seconds: u64 },
-    AuditRateLimited { events_dropped: u64, window_seconds: u64 },
+    VaultInitialized {
+        tpm_available: bool,
+        shamir_threshold: usize,
+        shamir_total: usize,
+    },
+    VaultUnlocked {
+        provider: String,
+        shamir_shares_used: Option<usize>,
+        tpm_pcr_valid: Option<bool>,
+    },
+    VaultLocked {
+        reason: LockReason,
+    },
+    TpmUnsealAttempt {
+        pcr_valid: bool,
+        counter_valid: bool,
+        success: bool,
+    },
+    TpmPcrMismatch {
+        expected_pcr_hash: [u8; 32],
+        actual_pcr_hash: [u8; 32],
+        affected_pcrs: Vec<u8>,
+    },
+    TpmCounterValidationFailed {
+        stored_counter: u64,
+        hardware_counter: u64,
+    },
+    TpmCounterIncremented {
+        old_value: u64,
+        new_value: u64,
+    },
+    KeyRotation {
+        old_key_fingerprint: [u8; 32],
+        new_key_fingerprint: [u8; 32],
+    },
+    ShamirSharesGenerated {
+        threshold: usize,
+        total: usize,
+        share_fingerprints: Vec<[u8; 32]>,
+    },
+    ShamirSharesCombined {
+        shares_used: usize,
+        threshold: usize,
+    },
+    RecoveryInitiated {
+        package_hash: [u8; 32],
+        usb_serial: Option<String>,
+        wots_verified: bool,
+    },
+    RecoveryCompleted {
+        vault_id: String,
+        new_pcr_baseline: [u8; 32],
+    },
+    TpmProvisioned {
+        tpm_manufacturer: String,
+        ek_cert_thumbprint: [u8; 32],
+    },
+    TpmError {
+        error_code: String,
+        operation: String,
+    },
+    FailedUnlockAttempt {
+        reason: String,
+        attempt_number: u32,
+        provider: String,
+    },
+    RateLimitExceeded {
+        attempts_in_window: u32,
+        lockout_duration_secs: u64,
+    },
+    ConfigurationChanged {
+        changed_fields: Vec<String>,
+        previous_hash: [u8; 32],
+        new_hash: [u8; 32],
+    },
+    UnauthorizedAccessAttempt {
+        source: String,
+        method: String,
+    },
+    ServiceStarted {
+        version: String,
+        build_hash: [u8; 32],
+    },
+    ServiceStopped {
+        reason: String,
+        uptime_seconds: u64,
+    },
+    AuditRateLimited {
+        events_dropped: u64,
+        window_seconds: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,8 +144,7 @@ impl ChainVerificationResult {
         if self.total_entries == 0 {
             return 100.0;
         }
-        (self.total_entries - self.tampered_entries.len() as u64) as f64
-            / self.total_entries as f64
+        (self.total_entries - self.tampered_entries.len() as u64) as f64 / self.total_entries as f64
             * 100.0
     }
 }
@@ -144,9 +213,13 @@ impl AuditLogger {
 
         let (last_hash, seq) = {
             let mut stmt = db
-                .prepare("SELECT entry_hash, sequence_number FROM audit_log ORDER BY id DESC LIMIT 1")
+                .prepare(
+                    "SELECT entry_hash, sequence_number FROM audit_log ORDER BY id DESC LIMIT 1",
+                )
                 .map_err(|e| VaultError::Audit(e.to_string()))?;
-            let mut rows = stmt.query([]).map_err(|e| VaultError::Audit(e.to_string()))?;
+            let mut rows = stmt
+                .query([])
+                .map_err(|e| VaultError::Audit(e.to_string()))?;
             match rows.next().map_err(|e| VaultError::Audit(e.to_string()))? {
                 Some(row) => {
                     let h: Vec<u8> = row.get(0).map_err(|e| VaultError::Audit(e.to_string()))?;
@@ -164,7 +237,10 @@ impl AuditLogger {
 
         Ok(Self {
             db: Mutex::new(db),
-            state: Mutex::new(AuditState { last_entry_hash: last_hash, sequence_number: seq }),
+            state: Mutex::new(AuditState {
+                last_entry_hash: last_hash,
+                sequence_number: seq,
+            }),
             session_id: sid,
             machine_id,
             max_events_per_second: meps,
@@ -250,14 +326,21 @@ impl AuditLogger {
 
     fn enforce_size_cap(&self) -> VaultResult<()> {
         let db = self.db.lock();
-        let pc: i64 = db.query_row("PRAGMA page_count", [], |r| r.get(0)).unwrap_or(0);
-        let ps: i64 = db.query_row("PRAGMA page_size", [], |r| r.get(0)).unwrap_or(4096);
+        let pc: i64 = db
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap_or(0);
+        let ps: i64 = db
+            .query_row("PRAGMA page_size", [], |r| r.get(0))
+            .unwrap_or(4096);
         let current_size = (pc * ps) as u64;
         if current_size <= self.max_database_size_bytes {
             return Ok(());
         }
 
-        tracing::warn!("Audit database limiet bereikt ({} bytes), archivering gestart...", current_size);
+        tracing::warn!(
+            "Audit database limiet bereikt ({} bytes), archivering gestart...",
+            current_size
+        );
 
         let entries_to_archive: i64 = db
             .query_row("SELECT COUNT(*) FROM audit_log WHERE id IN (SELECT id FROM audit_log ORDER BY id ASC LIMIT 10000)", [], |r| r.get(0))
@@ -265,7 +348,9 @@ impl AuditLogger {
 
         let mut archive_hasher = Sha256::new();
         {
-            let mut stmt = db.prepare("SELECT entry_hash FROM audit_log ORDER BY id ASC LIMIT 10000").ok();
+            let mut stmt = db
+                .prepare("SELECT entry_hash FROM audit_log ORDER BY id ASC LIMIT 10000")
+                .ok();
             if let Some(ref mut s) = stmt {
                 let mut rows = s.query([]).ok();
                 if let Some(ref mut r) = rows {
@@ -300,7 +385,11 @@ impl AuditLogger {
             }
         }
         db.execute_batch("PRAGMA incremental_vacuum(1000);").ok();
-        tracing::info!("Audit archivering voltooid: {} entries gearchiveerd, hash={}", entries_to_archive, hex::encode(archive_hash));
+        tracing::info!(
+            "Audit archivering voltooid: {} entries gearchiveerd, hash={}",
+            entries_to_archive,
+            hex::encode(archive_hash)
+        );
         Ok(())
     }
 
@@ -327,7 +416,10 @@ impl AuditLogger {
             let sq: i64 = row.get(7).map_err(|e| VaultError::Audit(e.to_string()))?;
 
             if eh.len() != 32 || pv.len() != 32 {
-                tampered.push(TamperedEntry { sequence_number: sq as u64, reason: "Corrupte hash lengte".into() });
+                tampered.push(TamperedEntry {
+                    sequence_number: sq as u64,
+                    reason: "Corrupte hash lengte".into(),
+                });
                 continue;
             }
 
@@ -337,11 +429,17 @@ impl AuditLogger {
             if sq as u64 != expected_seq {
                 tampered.push(TamperedEntry {
                     sequence_number: sq as u64,
-                    reason: format!("Sequence mismatch: verwacht {}, gekregen {}", expected_seq, sq),
+                    reason: format!(
+                        "Sequence mismatch: verwacht {}, gekregen {}",
+                        expected_seq, sq
+                    ),
                 });
             }
             if pv.as_slice() != ph.as_slice() {
-                tampered.push(TamperedEntry { sequence_number: sq as u64, reason: "Hash-koppeling verbroken".into() });
+                tampered.push(TamperedEntry {
+                    sequence_number: sq as u64,
+                    reason: "Hash-koppeling verbroken".into(),
+                });
             }
 
             let mut h = Sha256::new();
@@ -355,7 +453,10 @@ impl AuditLogger {
             let computed: [u8; 32] = h.finalize().into();
 
             if !constant_time_eq(&computed, &eha) {
-                tampered.push(TamperedEntry { sequence_number: sq as u64, reason: "Hash mismatch".into() });
+                tampered.push(TamperedEntry {
+                    sequence_number: sq as u64,
+                    reason: "Hash mismatch".into(),
+                });
             }
 
             ph = eha;
@@ -378,11 +479,15 @@ impl AuditLogger {
         } else {
             "SELECT entry_hash, previous_hash, timestamp, event_json, session_id, machine_id, sequence_number FROM audit_log ORDER BY id ASC"
         };
-        let mut stmt = db.prepare(query).map_err(|e| VaultError::Audit(e.to_string()))?;
+        let mut stmt = db
+            .prepare(query)
+            .map_err(|e| VaultError::Audit(e.to_string()))?;
         let mut rows = if let Some(s) = since {
-            stmt.query([s.to_rfc3339()]).map_err(|e| VaultError::Audit(e.to_string()))?
+            stmt.query([s.to_rfc3339()])
+                .map_err(|e| VaultError::Audit(e.to_string()))?
         } else {
-            stmt.query([]).map_err(|e| VaultError::Audit(e.to_string()))?
+            stmt.query([])
+                .map_err(|e| VaultError::Audit(e.to_string()))?
         };
 
         let mut entries = Vec::new();
@@ -396,13 +501,19 @@ impl AuditLogger {
             let sq: i64 = row.get(6).map_err(|e| VaultError::Audit(e.to_string()))?;
 
             if eh.len() != 32 || ph.len() != 32 || sid.len() != 16 || mid.len() != 32 {
-                return Err(VaultError::Audit("Ongeldige datalengte in database rij".into()));
+                return Err(VaultError::Audit(
+                    "Ongeldige datalengte in database rij".into(),
+                ));
             }
 
-            let mut entry_hash = [0u8; 32]; entry_hash.copy_from_slice(&eh);
-            let mut previous_hash = [0u8; 32]; previous_hash.copy_from_slice(&ph);
-            let mut session_id = [0u8; 16]; session_id.copy_from_slice(&sid);
-            let mut machine_id_arr = [0u8; 32]; machine_id_arr.copy_from_slice(&mid);
+            let mut entry_hash = [0u8; 32];
+            entry_hash.copy_from_slice(&eh);
+            let mut previous_hash = [0u8; 32];
+            previous_hash.copy_from_slice(&ph);
+            let mut session_id = [0u8; 16];
+            session_id.copy_from_slice(&sid);
+            let mut machine_id_arr = [0u8; 32];
+            machine_id_arr.copy_from_slice(&mid);
 
             let timestamp = DateTime::parse_from_rfc3339(&ts)
                 .map_err(|e| VaultError::Audit(format!("Ongeldig timestamp: {}", e)))?
@@ -430,8 +541,12 @@ impl AuditLogger {
 
     pub fn database_size_bytes(&self) -> VaultResult<u64> {
         let db = self.db.lock();
-        let pc: i64 = db.query_row("PRAGMA page_count", [], |r| r.get(0)).unwrap_or(0);
-        let ps: i64 = db.query_row("PRAGMA page_size", [], |r| r.get(0)).unwrap_or(4096);
+        let pc: i64 = db
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap_or(0);
+        let ps: i64 = db
+            .query_row("PRAGMA page_size", [], |r| r.get(0))
+            .unwrap_or(4096);
         Ok((pc * ps) as u64)
     }
 

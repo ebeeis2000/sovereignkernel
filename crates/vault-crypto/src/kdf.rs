@@ -51,7 +51,9 @@ pub fn derive_key_argon2id_with_salt(
     params: &Argon2Params,
 ) -> VaultResult<DerivedKey> {
     if password.is_empty() {
-        return Err(VaultError::Validation("Wachtwoord mag niet leeg zijn".into()));
+        return Err(VaultError::Validation(
+            "Wachtwoord mag niet leeg zijn".into(),
+        ));
     }
 
     let argon2_params = Params::new(
