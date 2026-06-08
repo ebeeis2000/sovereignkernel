@@ -1,0 +1,12 @@
+[package]
+name = "vault-shamir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Shamir Secret Sharing implementatie voor SovereignKernel"
+
+[dependencies]
+vault-common = { path = "../vault-common" }
+rand = { workspace = true }
+zeroize = { workspace = true }
+sha2 = { workspace = true }

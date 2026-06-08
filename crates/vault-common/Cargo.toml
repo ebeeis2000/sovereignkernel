@@ -1,0 +1,12 @@
+[package]
+name = "vault-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Gemeenschappelijke types en errors voor SovereignKernel vault"
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+hex = { workspace = true }
+rusqlite = { workspace = true }

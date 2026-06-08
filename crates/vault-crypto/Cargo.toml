@@ -1,0 +1,18 @@
+[package]
+name = "vault-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Cryptografische primitieven voor SovereignKernel vault"
+
+[dependencies]
+vault-common = { path = "../vault-common" }
+rand = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+hkdf = { workspace = true }
+aes-gcm = { workspace = true }
+zeroize = { workspace = true }
+serde = { workspace = true }
+subtle = { workspace = true }
+libc = { workspace = true }

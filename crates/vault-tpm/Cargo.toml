@@ -1,0 +1,26 @@
+[package]
+name = "vault-tpm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "TPM2 integratie voor SovereignKernel vault"
+
+[features]
+default = []
+tpm = ["tss-esapi"]
+
+[dependencies]
+vault-common = { path = "../vault-common" }
+vault-crypto = { path = "../vault-crypto" }
+vault-audit = { path = "../vault-audit" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+tss-esapi = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

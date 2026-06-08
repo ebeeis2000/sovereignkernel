@@ -1,0 +1,17 @@
+[package]
+name = "vault-db-tool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Database management CLI tool voor SovereignKernel"
+
+[dependencies]
+vault-common = { path = "../vault-common" }
+vault-crypto = { path = "../vault-crypto" }
+vault-core = { path = "../vault-core" }
+vault-audit = { path = "../vault-audit" }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+rusqlite = { workspace = true }
+hex = { workspace = true }

@@ -1,0 +1,40 @@
+[workspace]
+members = [
+    "crates/vault-common",
+    "crates/vault-crypto",
+    "crates/vault-tpm",
+    "crates/vault-core",
+    "crates/vault-audit",
+    "crates/vault-shamir",
+    "crates/vault-db-tool",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+rand = "0.8"
+sha2 = "0.10"
+hmac = "0.12"
+hkdf = "0.12"
+aes-gcm = "0.10"
+zeroize = { version = "1.6", features = ["derive"] }
+subtle = "2.5"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+rusqlite = { version = "0.31", features = ["bundled", "backup"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tss-esapi = "7"
+tempfile = "3"
+libc = "0.2"
+r2d2 = "0.8"
+r2d2_sqlite = "0.24"
+clap = { version = "4", features = ["derive"] }
+parking_lot = "0.12"

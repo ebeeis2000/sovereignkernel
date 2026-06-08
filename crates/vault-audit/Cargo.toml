@@ -1,0 +1,18 @@
+[package]
+name = "vault-audit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tamper-evident audit logging voor SovereignKernel"
+
+[dependencies]
+vault-common = { path = "../vault-common" }
+vault-crypto = { path = "../vault-crypto" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+rand = { workspace = true }
+tracing = { workspace = true }
+parking_lot = { workspace = true }

@@ -1,0 +1,33 @@
+# Rust
+target/
+Cargo.lock
+
+# .NET
+windows-service/bin/
+windows-service/obj/
+
+# Node/Electron
+electron-ui/node_modules/
+electron-ui/dist/
+electron-ui/out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.exe
+*.dll
+*.pdb
+
+# Vault data (never commit)
+*.db
+*.db-journal
+*.db-wal
+vault-data/
