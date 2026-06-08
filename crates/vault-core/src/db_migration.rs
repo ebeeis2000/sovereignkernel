@@ -20,11 +20,15 @@ pub fn migrate_to_encrypted(db_path: &Path, key: &DatabaseKey) -> VaultResult<Mi
     let backup_path = db_path.with_extension("db.backup");
     let encrypted_path = db_path.with_extension("db.encrypted");
 
-    tracing::info!("Start database migratie: {} -> SQLCipher", db_path.display());
+    tracing::info!(
+        "Start database migratie: {} -> SQLCipher",
+        db_path.display()
+    );
 
     if backup_path.exists() {
-        fs::remove_file(&backup_path)
-            .map_err(|e| VaultError::Storage(format!("Kan bestaande backup niet verwijderen: {}", e)))?;
+        fs::remove_file(&backup_path).map_err(|e| {
+            VaultError::Storage(format!("Kan bestaande backup niet verwijderen: {}", e))
+        })?;
     }
 
     fs::copy(&original_path, &backup_path)
@@ -37,7 +41,9 @@ pub fn migrate_to_encrypted(db_path: &Path, key: &DatabaseKey) -> VaultResult<Mi
 
     let tables: Vec<String> = {
         let mut stmt = src_conn
-            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
+            )
             .map_err(|e| VaultError::Storage(format!("Kan tabellen niet lezen: {}", e)))?;
         let rows = stmt
             .query_map([], |row| row.get(0))
@@ -49,10 +55,13 @@ pub fn migrate_to_encrypted(db_path: &Path, key: &DatabaseKey) -> VaultResult<Mi
         names
     };
 
-    let mut original_row_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut original_row_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for table in &tables {
         let count: usize = src_conn
-            .query_row(&format!("SELECT count(*) FROM \"{}\"", table), [], |row| row.get(0))
+            .query_row(&format!("SELECT count(*) FROM \"{}\"", table), [], |row| {
+                row.get(0)
+            })
             .unwrap_or(0);
         original_row_counts.insert(table.clone(), count);
     }
@@ -62,7 +71,9 @@ pub fn migrate_to_encrypted(db_path: &Path, key: &DatabaseKey) -> VaultResult<Mi
     }
 
     let mut dst_conn = open_encrypted_database(
-        encrypted_path.to_str().ok_or_else(|| VaultError::Storage("Ongeldig pad".into()))?,
+        encrypted_path
+            .to_str()
+            .ok_or_else(|| VaultError::Storage("Ongeldig pad".into()))?,
         key,
         true,
     )
@@ -76,13 +87,15 @@ pub fn migrate_to_encrypted(db_path: &Path, key: &DatabaseKey) -> VaultResult<Mi
             .map_err(|e| VaultError::Storage(format!("Backup API fout: {}", e)))?;
         backup
             .run_to_completion(100, std::time::Duration::from_millis(250), None)
-            .map_err(|e| VaultError::Storage(format!("Backup uitvoering fout: {}", e)))?;
+            .map_err(|e| VaultError::Storage(format!("Backup uitvoering fout: {}", e)))?
     }
 
     let mut total_rows = 0;
     for table in &tables {
         let count: usize = dst_conn
-            .query_row(&format!("SELECT count(*) FROM \"{}\"", table), [], |row| row.get(0))
+            .query_row(&format!("SELECT count(*) FROM \"{}\"", table), [], |row| {
+                row.get(0)
+            })
             .unwrap_or(0);
         let original = original_row_counts.get(table).copied().unwrap_or(0);
         if count != original {
